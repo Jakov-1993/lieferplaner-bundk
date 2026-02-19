@@ -1,0 +1,37 @@
+{
+  "name": "lieferplaner-bundk",
+  "version": "1.0.0",
+  "description": "Broschberg & Käser AG Lieferplan",
+  "main": "main.js",
+  "author": "Broschberg & Käser AG",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "ch.bundk.lieferplaner",
+    "productName": "Lieferplaner BUNDK",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/*",
+      "!node_modules/.cache"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
+}

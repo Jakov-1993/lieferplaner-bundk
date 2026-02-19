@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Broschberg & Käser AG Lieferplan</title>
+
+<style>
+:root{
+  --bg:#0b0f19;--card:#121826;--border:#1f2937;--text:#e5e7eb;
+  --muted:#9fb0c9;--chip:#263043;--ok:#10b981;--bad:#ef4444;--warn:#facc15;
+  --blue:#1d4ed8;--green:#16a34a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto,Arial}
+.wrap{max-width:1200px;margin:0 auto;padding:18px}
+h2{margin:0 0 10px 0}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin:12px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:1px solid var(--chip);background:#101827;color:var(--text);padding:10px 12px;border-radius:10px;cursor:pointer}
+input[type=file]{display:none}
+.field{background:#0f172a;border:1px solid var(--chip);color:var(--text);border-radius:10px;padding:8px 10px;min-width:180px}
+.chip{border:1px solid var(--chip);border-radius:999px;padding:6px 10px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn);font-weight:700}
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid #1e2637;padding:8px;vertical-align:top}
+th{text-align:left;color:var(--muted);font-weight:600}
+
+/* Termin-Status */
+.status{display:inline-block;border:1px solid #243048;border-radius:999px;padding:2px 8px}
+.st-over{background:#7a1212;color:#fff;border-color:#a21d1d}
+.st-today{background:#ef4444;color:#fff;border-color:#ef4444}
+.st-due{background:#facc15;color:#1b1b1b;border-color:#d1a90a}
+.st-7{background:#20334d}
+.st-14{background:#1e2c46}
+.st-30{background:#18243a}
+.st-60{background:#141f33}
+
+.hint{display:inline-block;background:#3a3005;color:#f7e7a3;border:1px solid #6b5d11;border-radius:8px;padding:2px 6px;margin-left:6px}
+.kpi{display:flex;gap:8px;flex-wrap:wrap}
+.kpi .card{padding:10px 12px}
+.small{font-size:12px;color:var(--muted)}
+.right{margin-left:auto}
+
+.tr-done{background:#0f2a1a !important}
+.tr-critical{background:#2b0b0b !important;color:#fff}
+
+.belegcell b{display:block}
+.belegcell .small{display:block;margin-top:2px}
+td.lager{white-space:nowrap;font-family:monospace}
+
+td.comment{
+  min-width:220px;max-width:260px;border-radius:8px;background:#020617;
+  font-size:13px;line-height:1.4;
+}
+td.comment[contenteditable="true"]{outline:none;border:1px solid transparent;padding:6px 8px}
+td.comment[contenteditable="true"]:hover{border-color:#334155}
+td.comment[contenteditable="true"]:focus{border-color:#3b82f6;background:#0f172a}
+td.comment.empty::before{content:"Notiz hinzufügen …";color:var(--muted);font-style:italic}
+
+/* Chips für Geschickt / Eingetroffen */
+.pill{
+  display:inline-block;min-width:22px;text-align:center;border-radius:999px;
+  padding:2px 8px;border:1px solid #374151;font-size:12px;cursor:pointer;
+  user-select:none;
+}
+.pill-sent.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.pill-arr.on{background:var(--green);border-color:var(--green);color:#fff}
+.pill.off{background:transparent;color:var(--muted)}
+td.center{text-align:center}
+th.nowrap{white-space:nowrap}
+
+td{vertical-align:top}
+.cellbox{max-height:90px;overflow:auto;white-space:pre-wrap;line-height:1.35}
+
+</style>
+
+<!-- PDF.js (offline) -->
+<script src="lib/pdf.js"></script>
+<script>
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.js';
+}
+</script>
+</head>
+
+<body>
+<div class="wrap">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+    <img src="assets/logo-32.png" alt="Broschberg & Käser AG" style="height:42px;border-radius:8px">
+    <h2 style="margin:0">Broschberg & Käser AG Lieferplan</h2>
+  </div>
+
+  <div class="card row">
+    <label class="btn"><input id="pickpdf" type="file" accept="application/pdf,.pdf">Kontrollliste laden</label>
+    <label class="btn"><input id="pickpdf2" type="file" accept="application/pdf,.pdf">Purchmaster laden</label>
+
+    <input id="search" class="field" placeholder="Suche: Kunde / Position / Beleg …">
+
+    <select id="statusFilter" class="field">
+      <option value="">Status: alle</option>
+      <option value="Überfällig">Überfällig</option>
+      <option value="Fällig heute">Fällig heute</option>
+      <option value="Fällig">Fällig 1–2 Werktage</option>
+      <option value="≤7">Fällig ≤7 Tage</option>
+      <option value="≤14">Fällig ≤14 Tage</option>
+      <option value="≤30">Fällig ≤30 Tage</option>
+      <option value="≤60">Fällig ≤60 Tage</option>
+      <option value="Später">Später</option>
+    </select>
+
+    <select id="shipFilter" class="field">
+      <option value="">Versand/Ankunft: alle</option>
+      <option value="rel">Nur relevant (600–699 ohne 640)</option>
+      <option value="rel-sent">Relevant + Geschickt</option>
+      <option value="rel-arr">Relevant + Eingetroffen</option>
+      <option value="rel-not-arr">Relevant + NICHT eingetroffen</option>
+    </select>
+
+    <button id="btnResetPM" class="btn">PM Felder zurücksetzen</button>
+
+    <span id="libBadge" class="chip right">PDF.js prüfen…</span>
+  </div>
+
+  <div class="card small">
+    ⚠️ <span class="warn">„Geschickt/Eingetroffen“ wird nur bei Offene Arbeiten 600–699 (640 wird ignoriert) automatisch gesetzt.</span><br>
+    Klick auf die Chips toggelt manuell (wenn nicht aus Purchmaster gesetzt).
+  </div>
+
+  <div class="card row small">
+    <button id="btnBackupSave" class="btn">Backup speichern (JSON)</button>
+    <label class="btn"><input id="backupFile" type="file" accept="application/json">Backup laden</label>
+    <button id="btnClear" class="btn">Alles löschen</button>
+    <span id="dbInfo" class="chip right">—</span>
+  </div>
+
+  <div id="kpi" class="kpi"></div>
+
+  <div class="card">
+    <div class="row" style="align-items:flex-end;gap:12px">
+      <div>
+        <b>📊 Jahresdiagramm</b><br>
+        <span class="small">Gesamt vs. Verspätet (Jahr) + aktuell verspätet</span>
+      </div>
+    </div>
+    <canvas id="yearChart" width="1100" height="260"
+      style="width:100%;height:260px;margin-top:10px;border:1px solid #1f2937;border-radius:12px;background:#0b1222"></canvas>
+  </div>
+
+  <div class="card">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th style="width:44px">OK</th>
+          <th style="width:260px">Beleg / <span class="small">BA</span></th>
+          <th style="width:170px">Kundenbezeichnung</th>
+          <th style="width:130px">Artikelnummer</th>
+          <th>Positionsbezeichnung</th>
+          <th style="width:110px">Liefertermin</th>
+          <th style="width:90px">Lagerplatz</th>
+          <th style="width:140px">Status</th>
+          <th style="width:160px">Offene Arbeiten</th>
+          <th class="nowrap" style="width:140px">Geschickt</th>
+          <th class="nowrap" style="width:140px">Eingetroffen</th>
+          <th style="width:120px">STEP</th>
+          <th style="width:220px">Kommentar</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="13" class="small">Noch keine Daten.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* =========================
+   STORAGE
+========================= */
+const DB_KEY   = 'bundk_rows_v18_ship_arrive';
+const META_KEY = 'bundk_meta_v18_ship_arrive';
+const YEAR_STATS_KEY = 'bundk_year_stats_v1';
+
+function currentYear(){ return String(new Date().getFullYear()); }
+function emptyYearStats(y){
+  return { year:y, totalSeen:0, lateEver:0, seenIds:{}, lateIds:{}, updatedAt:null };
+}
+function loadYearStats(){
+  const y = currentYear();
+  try{
+    const s = JSON.parse(localStorage.getItem(YEAR_STATS_KEY) || 'null');
+    if (!s || s.year !== y) return emptyYearStats(y);
+    s.seenIds = (s.seenIds && typeof s.seenIds==='object') ? s.seenIds : {};
+    s.lateIds = (s.lateIds && typeof s.lateIds==='object') ? s.lateIds : {};
+    s.totalSeen = Number(s.totalSeen || 0);
+    s.lateEver  = Number(s.lateEver  || 0);
+    return s;
+  }catch{
+    return emptyYearStats(y);
+  }
+}
+function saveYearStats(s){
+  s.updatedAt = new Date().toISOString();
+  localStorage.setItem(YEAR_STATS_KEY, JSON.stringify(s));
+}
+let YEAR = loadYearStats();
+
+/* =========================
+   DOM
+========================= */
+const libBadge     = document.getElementById('libBadge');
+const tbody        = document.getElementById('tbody');
+const search       = document.getElementById('search');
+const statusFilter = document.getElementById('statusFilter');
+const shipFilter   = document.getElementById('shipFilter');
+const dbInfo       = document.getElementById('dbInfo');
+
+/* =========================
+   PDF.JS CHECK
+========================= */
+function checkPDF(){
+  if (window.pdfjsLib && pdfjsLib.getDocument){
+    libBadge.innerHTML = 'PDF.js geladen <span class="ok">✓</span>';
+    return true;
+  }
+  libBadge.innerHTML = 'PDF.js NICHT gefunden <span class="bad">✗</span>';
+  return false;
+}
+checkPDF();
+
+/* =========================
+   UTILS / DB
+========================= */
+function uidOf(r){
+  const posKey = (r.Position||'').slice(0,120).replace(/\s+/g,' ');
+  return `${r.Beleg||''}::${r.BA||''}::${r.Artikel||''}::${posKey}`;
+}
+function loadDB(){
+  try{
+    const arr = JSON.parse(localStorage.getItem(DB_KEY)||'[]');
+    return Array.isArray(arr)?arr:[];
+  }catch{ return []; }
+}
+function saveDB(rows){
+  localStorage.setItem(DB_KEY, JSON.stringify(rows));
+  const meta = {count:rows.length,ts:new Date().toISOString()};
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
+  setDbInfo(rows.length, meta.ts);
+
+  // ⭐ NEU: zusätzlich in Datei speichern (für Benachrichtigungen + Hintergrund)
+  if (window.bundkStore) window.bundkStore.saveRows(rows);
+}
+function setDbInfo(n, ts){
+  dbInfo.textContent = `Einträge: ${n} • Stand: ${ts?new Date(ts).toLocaleString():'—'}`;
+}
+
+/* MERGE: Kommentare, Done, Lagerplatz, Sent/Arrived behalten */
+function mergeRows(existing, incoming, {full=false}={}){
+  const map = new Map(existing.map(r=>[uidOf(r),r]));
+  incoming.forEach(n=>{
+    const id = uidOf(n);
+    const prev = map.get(id);
+
+    if (prev && prev.Done === true) n.Done = true;
+    if (prev && typeof prev.Comment === 'string' && !n.Comment) n.Comment = prev.Comment;
+    if (prev && prev.Lagerplatz && !n.Lagerplatz) n.Lagerplatz = prev.Lagerplatz;
+
+    if (prev){
+      if (prev.Sent === true) n.Sent = true;
+      if (prev.Arrived === true) n.Arrived = true;
+      if (prev.SentAt && !n.SentAt) n.SentAt = prev.SentAt;
+      if (prev.ArrivedAt && !n.ArrivedAt) n.ArrivedAt = prev.ArrivedAt;
+      if (prev.PMSource === true) n.PMSource = true;
+    }
+
+    n._updatedAt = new Date().toISOString();
+    map.set(id, {...prev,...n});
+  });
+
+  if (full){
+    const keep = new Set(incoming.map(uidOf));
+    return Array.from(map.entries()).filter(([id])=>keep.has(id)).map(([,v])=>v);
+  }
+  return Array.from(map.values());
+}
+
+/* =========================
+   STATE
+========================= */
+let ROWS = loadDB();
+setDbInfo(ROWS.length, (JSON.parse(localStorage.getItem(META_KEY)||'{}')).ts);
+
+// ⭐ NEU: beim Start zusätzlich Datei-Daten laden (wenn vorhanden)
+if (window.bundkStore){
+  window.bundkStore.loadRows().then(fileRows=>{
+    if (Array.isArray(fileRows) && fileRows.length){
+      ROWS = mergeRows(ROWS, fileRows, {full:false});
+      sanitizeRows();
+      saveDB(ROWS);
+      render();
+    }
+  }).catch(()=>{});
+}
+
+/* =========================
+   DATE HELPERS
+========================= */
+function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function businessDaysDiff(fromDate, toDate){
+  let from = startOfDay(fromDate), to = startOfDay(toDate);
+  if (to <= from) return 0;
+  let days = 0;
+  while (from < to){
+    from = new Date(from.getTime()+864e5);
+    const dow = from.getDay();
+    if (dow!==0 && dow!==6) days++;
+  }
+  return days;
+}
+function statusFromDate(d){
+  if (!d) return '';
+  const t = startOfDay(new Date()); d = startOfDay(d);
+  const calDiff = Math.round((d-t)/864e5);
+  if (calDiff < 0)  return 'Überfällig';
+  if (calDiff === 0)return 'Fällig heute';
+  const bd = businessDaysDiff(t,d);
+  if (bd >=1 && bd <=2) return 'Fällig';
+  if (calDiff <=7)  return '≤7';
+  if (calDiff <=14) return '≤14';
+  if (calDiff <=30) return '≤30';
+  if (calDiff <=60) return '≤60';
+  return 'Später';
+}
+function statusClass(st){
+  return st==='Überfällig' ? 'status st-over'
+       : st==='Fällig heute' ? 'status st-today'
+       : st==='Fällig' ? 'status st-due'
+       : st==='≤7' ? 'status st-7'
+       : st==='≤14'? 'status st-14'
+       : st==='≤30'? 'status st-30'
+       : st==='≤60'? 'status st-60'
+       : 'status';
+}
+function toDateMaybe(s){
+  if (!s) return null;
+  let m = String(s).match(/(\d{2})\.(\d{2})\.(\d{2})$/);
+  if (m){
+    const [_,d,mo,y2]=m; const y=+y2+2000;
+    return new Date(y,+mo-1,+d);
+  }
+  m = String(s).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (m){
+    const [_,d,mo,y4]=m;
+    return new Date(+y4,+mo-1,+d);
+  }
+  return null;
+}
+function isLateRow(r){
+  const d = toDateMaybe(r.Liefertermin);
+  const st = statusFromDate(d || new Date(3000,0,1));
+  return !r.Done && st === 'Überfällig';
+}
+const rank = s => ({
+  'Überfällig':0,'Fällig heute':1,'Fällig':2,'≤7':3,'≤14':4,'≤30':5,'≤60':6,'Später':7
+}[s] ?? 99);
+
+/* =========================
+   RELEVANZ: 600–699, ABER 640 IGNORIEREN
+========================= */
+function isRelevantOffene(offene){
+  if (!offene) return false;
+  const nums = String(offene).split('/').map(x=>parseInt(x,10)).filter(n=>Number.isFinite(n));
+  return nums.some(n => n>=600 && n<=699 && n!==640);
+}
+
+/* =========================
+   YEAR STATS + CHART
+========================= */
+function updateYearStatsFromRows(rows){
+  YEAR = loadYearStats();
+  const y = currentYear();
+  if (YEAR.year !== y) YEAR = emptyYearStats(y);
+  rows.forEach(r=>{
+    const id = uidOf(r);
+    if (!YEAR.seenIds[id]){ YEAR.seenIds[id]=1; YEAR.totalSeen++; }
+    if (!YEAR.lateIds[id] && isLateRow(r)){ YEAR.lateIds[id]=1; YEAR.lateEver++; }
+  });
+  saveYearStats(YEAR);
+}
+function drawYearChart({year, totalSeen, lateEver, lateNow}){
+  const canvas = document.getElementById('yearChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || canvas.width;
+  const cssH = canvas.clientHeight || canvas.height;
+  canvas.width  = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  const W = cssW, H = cssH;
+  ctx.clearRect(0,0,W,H);
+
+  const top = 34, bottom = 34, left = 60, right = 18;
+  const chartW = W - left - right;
+  const chartH = H - top - bottom;
+
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 1;
+  const grid = 4;
+  for (let i=0;i<=grid;i++){
+    const y = top + (chartH/grid)*i;
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left+chartW, y); ctx.stroke();
+  }
+
+  const v1 = Math.max(0, totalSeen||0);
+  const v2 = Math.max(0, lateEver||0);
+  const v3 = Math.max(0, lateNow||0);
+  const maxV = Math.max(1, v1, v2, v3);
+
+  ctx.fillStyle = '#9fb0c9';
+  ctx.font = '12px system-ui, Segoe UI, Roboto, Arial';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i=0;i<=grid;i++){
+    const val = Math.round((maxV/grid) * (grid - i));
+    const y = top + (chartH/grid)*i;
+    ctx.fillText(String(val), left - 8, y);
+  }
+
+  ctx.fillStyle = '#e5e7eb';
+  ctx.font = '700 14px system-ui, Segoe UI, Roboto, Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`Jahr ${year} – Übersicht`, left, 18);
+
+  const items = [
+    {label:'Gesamt (Jahr)', value:v1, color:'#10b981'},
+    {label:'Verspätet (mind. 1×, Jahr)', value:v2, color:'#facc15'},
+    {label:'Verspätet (jetzt)', value:v3, color:'#ef4444'}
+  ];
+
+  const barGap = 28;
+  const barW = Math.min(220, (chartW - barGap*(items.length-1)) / items.length);
+  const totalBarsW = barW*items.length + barGap*(items.length-1);
+  let x = left + (chartW - totalBarsW)/2;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  items.forEach(it=>{
+    const h = Math.round((it.value/maxV) * chartH);
+    const y = top + (chartH - h);
+
+    ctx.fillStyle = it.color;
+    roundRect(ctx, x, y, barW, h, 12);
+    ctx.fill();
+
+    ctx.fillStyle = '#e5e7eb';
+    ctx.font = '700 14px system-ui, Segoe UI, Roboto, Arial';
+    ctx.fillText(String(it.value), x + barW/2, Math.max(22, y - 20));
+
+    ctx.fillStyle = '#9fb0c9';
+    ctx.font = '12px system-ui, Segoe UI, Roboto, Arial';
+    wrapText(ctx, it.label, x + barW/2, top + chartH + 10, barW + 10, 14);
+
+    x += barW + barGap;
+  });
+
+  function roundRect(ctx, x, y, w, h, r){
+    const rr = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+rr, y);
+    ctx.arcTo(x+w, y, x+w, y+h, rr);
+    ctx.arcTo(x+w, y+h, x, y+h, rr);
+    ctx.arcTo(x, y+h, x, y, rr);
+    ctx.arcTo(x, y, x+w, y, rr);
+    ctx.closePath();
+  }
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+    const words = String(text).split(' ');
+    let line = '';
+    let yy = y;
+    for (let n=0;n<words.length;n++){
+      const test = line ? (line + ' ' + words[n]) : words[n];
+      if (ctx.measureText(test).width > maxWidth && line){
+        ctx.fillText(line, x, yy);
+        line = words[n];
+        yy += lineHeight;
+      }else{
+        line = test;
+      }
+    }
+    if (line) ctx.fillText(line, x, yy);
+  }
+}
+
+/* =========================
+   NORMALIZE ROWS
+========================= */
+function sanitizeRows(){
+  ROWS = ROWS.map(r=>{
+    const rel = isRelevantOffene(r.Offene);
+    const sent = r.Sent === true;
+    const arr  = r.Arrived === true;
+
+    if (!rel){
+      return {
+        ...r,
+        Sent:false, SentAt:null,
+        Arrived:false, ArrivedAt:null,
+        PMSource:false,
+        Done: r.Done === true
+      };
+    }
+
+    return {
+      ...r,
+      Sent: sent,
+      Arrived: arr,
+      SentAt: r.SentAt || null,
+      ArrivedAt: r.ArrivedAt || null,
+      PMSource: r.PMSource === true,
+      Done: r.Done === true
+    };
+  });
+}
+
+/* =========================
+   RENDER
+========================= */
+function render(){
+  sanitizeRows();
+
+  const q  = (search.value||'').toLowerCase();
+  const f  = statusFilter.value;
+  const sf = shipFilter.value;
+
+  const view = ROWS.map(r=>{
+    const d  = toDateMaybe(r.Liefertermin);
+    const st = statusFromDate(d||new Date(3000,0,1));
+    const rel = isRelevantOffene(r.Offene);
+    return {...r,_date:d,_status:st,_relevant:rel};
+  }).filter(r=>{
+    const textMatch = !q ||
+      (r.Kunde||'').toLowerCase().includes(q) ||
+      (r.Beleg||'').includes(q) ||
+      (r.BA||'').includes(q) ||
+      (r.Artikel||'').toLowerCase().includes(q) ||
+      (r.Position||'').toLowerCase().includes(q) ||
+      (r.Offene||'').includes(q) ||
+      (r.Lagerplatz||'').toLowerCase().includes(q) ||
+      (r.Comment||'').toLowerCase().includes(q) ||
+      (r.SentAt||'').includes(q) ||
+      (r.ArrivedAt||'').includes(q);
+
+    const statusMatch = !f || r._status===f;
+
+    let shipMatch = true;
+    if (sf==='rel') shipMatch = r._relevant;
+    else if (sf==='rel-sent') shipMatch = r._relevant && r.Sent === true;
+    else if (sf==='rel-arr') shipMatch = r._relevant && r.Arrived === true;
+    else if (sf==='rel-not-arr') shipMatch = r._relevant && r.Arrived !== true;
+
+    return textMatch && statusMatch && shipMatch;
+  }).sort((a,b)=>{
+    const ra=rank(a._status), rb=rank(b._status);
+    if (ra!==rb) return ra-rb;
+    const ta=a._date ? a._date.getTime():9e15;
+    const tb=b._date ? b._date.getTime():9e15;
+    if (ta!==tb) return ta-tb;
+    return String(a.Beleg||'').localeCompare(String(b.Beleg||''));
+  });
+
+  updateYearStatsFromRows(ROWS);
+  YEAR = loadYearStats();
+
+  const k = { dbTotal: ROWS.length, dbOpen:0, dbLateNow:0, viewTotal: view.length, rel:0, sent:0, arr:0 };
+  ROWS.forEach(r=>{
+    if(!r.Done) k.dbOpen++;
+    if(isLateRow(r)) k.dbLateNow++;
+    if(isRelevantOffene(r.Offene)){
+      k.rel++;
+      if(r.Sent) k.sent++;
+      if(r.Arrived) k.arr++;
+    }
+  });
+
+  document.getElementById('kpi').innerHTML = `
+    <div class="card small">Jahr <b>${YEAR.year}</b> – Gesamt Lieferungen: <b>${YEAR.totalSeen}</b></div>
+    <div class="card small">Jahr <b>${YEAR.year}</b> – Verspätet (mind. 1×): <b class="bad">${YEAR.lateEver}</b></div>
+    <div class="card small">DB Gesamt: <b>${k.dbTotal}</b></div>
+    <div class="card small">DB Offen: <b>${k.dbOpen}</b></div>
+    <div class="card small">DB Verspätet (jetzt): <b class="bad">${k.dbLateNow}</b></div>
+    <div class="card small">Relevant: <b>${k.rel}</b> • Geschickt: <b>${k.sent}</b> • Eingetroffen: <b>${k.arr}</b></div>
+    <div class="card small">Gesamt (Ansicht): <b>${k.viewTotal}</b></div>
+  `;
+
+  drawYearChart({ year: YEAR.year, totalSeen: YEAR.totalSeen, lateEver: YEAR.lateEver, lateNow: k.dbLateNow });
+
+  tbody.innerHTML = view.length ? '' : `<tr><td colspan="13" class="small">Keine Daten (Filter?).</td></tr>`;
+
+  view.forEach(r=>{
+    const st = r._status;
+    const relevant = r._relevant;
+    const isCritical = (st==='Fällig heute' || st==='Fällig' || st==='≤7') && relevant;
+    const trClass = r.Done ? 'tr-done' : (isCritical?'tr-critical':'');
+    const checked = r.Done ? 'checked' : '';
+    const key = uidOf(r);
+
+    const commentText = escapeHtml(r.Comment||'');
+    const commentClass = commentText ? '' : 'empty';
+
+    const hint = relevant ? `<span class="hint">⚠️ relevant</span>` : '';
+
+    const sentOn = (r.Sent === true);
+    const arrOn  = (r.Arrived === true);
+
+    const sentTitle = r.SentAt ? `Geschickt: ${r.SentAt}` : 'Geschickt';
+    const arrTitle  = r.ArrivedAt ? `Eingetroffen: ${r.ArrivedAt}` : 'Eingetroffen';
+
+    const sentText = sentOn ? (r.SentAt ? `1 • ${r.SentAt}` : '1') : '';
+    const arrText  = arrOn  ? (r.ArrivedAt ? `3 • ${r.ArrivedAt}` : '3') : '';
+
+    const sentHtml = relevant
+      ? `<span class="pill pill-sent ${sentOn?'on':'off'}" data-pill="sent" title="${escapeHtml(sentTitle)}">${escapeHtml(sentText)}</span>`
+      : '—';
+
+    const arrHtml = relevant
+      ? `<span class="pill pill-arr ${arrOn?'on':'off'}" data-pill="arr" title="${escapeHtml(arrTitle)}">${escapeHtml(arrText)}</span>`
+      : '—';
+
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr data-uid="${key}" class="${trClass}">
+        <td><input type="checkbox" class="chk-done" ${checked} title="Erledigt markieren"></td>
+        <td class="belegcell">
+          <b>${escapeHtml(r.Beleg||'')}</b>
+          <span class="small">BA: ${escapeHtml(r.BA||'—')}</span>
+          ${r.PMSource ? `<span class="small">PM: gesetzt</span>` : ``}
+        </td>
+        <td><div class="cellbox">${escapeHtml(r.Kunde||'')}</div></td>
+        <td><div class="cellbox">${escapeHtml(r.Artikel||'')}</div></td>
+        <td><div class="cellbox">${escapeHtml(r.Position||'')}</div></td>
+        <td>${escapeHtml(r.Liefertermin||'')}</td>
+        <td class="lager">${escapeHtml(r.Lagerplatz||'')}</td>
+        <td><span class="${statusClass(st)}">${escapeHtml(st)}</span></td>
+        <td>${escapeHtml(r.Offene||'')} ${hint}</td>
+        <td class="center">${sentHtml}</td>
+        <td class="center">${arrHtml}</td>
+        <td class="center"><button class="btn btn-step" title="STEP Datei in Z:\\ suchen & öffnen">STEP</button></td>
+        <td class="comment ${commentClass}" contenteditable="true">${commentText}</td>
+      </tr>
+    `);
+  });
+
+  function escapeHtml(s){
+    return String(s ?? '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#039;');
+  }
+}
+
+/* =========================
+   PARSER: KONTROLLLISTE
+========================= */
+function extractOffeneArbeiten(after){
+  let s = ' ' + (after||'') + ' ';
+  s = s.replace(/\b\d+\.\d+\b/g,' ');
+  s = s.replace(/(\d{3}(?:\/\d{3})+)(\d{6,})/g,'$1 $2');
+  s = s.replace(/(\b\d{3})(\d{6,}\b)/g,'$1 $2');
+  const chains = s.match(/\b\d{3}(?:\/\d{3})+\b/g);
+  if (chains && chains.length) return chains[chains.length-1];
+  const singles = s.match(/\b\d{3}\b/g);
+  if (singles && singles.length) return singles[singles.length-1];
+  return '';
+}
+function extractBA(after, fullChunk){
+  let s = ' ' + (after||'') + ' ';
+  s = s.replace(/\b\d+\.\d+\b/g,' ')
+       .replace(/\b\d{2}\.\d{2}\.\d{2}\b/g,' ')
+       .replace(/\b\d{3}(?:\/\d{3})+\b/g,' ')
+       .replace(/\b\d{3}\b/g,' ')
+       .replace(/(\b\d{3})(\d{6}\b)/g,'$1 $2');
+  let cands = s.match(/\b\d{6}\b/g);
+  if (cands && cands.length) return cands[cands.length-1];
+  if (fullChunk){
+    let t = ' ' + fullChunk + ' ';
+    t = t.replace(/\b\d+\.\d+\b/g,' ')
+         .replace(/\b\d{2}\.\d{2}\.\d{2}\b/g,' ')
+         .replace(/\b\d{3}(?:\/\d{3})+\b/g,' ')
+         .replace(/\b\d{3}\b/g,' ')
+         .replace(/(\b\d{3})(\d{6}\b)/g,'$1 $2');
+    cands = t.match(/\b\d{6}\b/g);
+    if (cands && cands.length) return cands[cands.length-1];
+  }
+  return '';
+}
+function parseRawKontrollliste(raw){
+  const startIdx = raw.search(/Kontrolliste\s+Produktion/i);
+  const text = startIdx>=0 ? raw.slice(startIdx) : raw;
+  const chunks = text.split(/(?=20\d{6}\b)/g).map(s=>s.trim()).filter(s=>/^20\d{6}/.test(s));
+  const rows = [];
+
+  for (let c of chunks){
+    c = c.replace(/^\d+\.\d+\s+-?\d+\.\d+\s+/,'');
+    const mBeleg = c.match(/^(20\d{6})\b/);
+    if (!mBeleg) continue;
+    const beleg = mBeleg[1];
+    let rest = c.slice(mBeleg[0].length).trim();
+
+    let artTok = (rest.split(/\s+/,1)[0]||'').trim();
+    rest = rest.slice(artTok.length).trim();
+
+    let artikel = artTok;
+    if (/^[PK]\d+[A-ZÄÖÜ]/.test(artTok)){
+      const split = artTok.match(/^([PK]\d+)([A-ZÄÖÜ].*)$/);
+      if (split){ artikel = split[1]; rest = (split[2] + ' ' + rest).trim(); }
+    }
+
+    const mDate = rest.match(/\b\d{2}\.\d{2}\.\d{2}\b/);
+    if (!mDate) continue;
+    const lieferTerminTxt = mDate[0];
+    const idxDate = rest.indexOf(lieferTerminTxt);
+
+    const before = rest.slice(0,idxDate).trim();
+    let after = rest.slice(idxDate + lieferTerminTxt.length).trim();
+
+    let lagerplatz = '';
+    const mLag = after.match(/\b\d-\d-\d{3}\b/);
+    if (mLag){
+      lagerplatz = mLag[0];
+      after = after.replace(mLag[0],' ');
+    }
+
+    let kunde='', posbez='';
+    const split2 = before.split(/\s{2,}/);
+    if (split2.length >= 2){
+      kunde = split2.shift().trim();
+      posbez = split2.join(' ').trim();
+    }else{
+      const suf = before.match(/(.+?\b(?:AG|GmbH|Verein|Systems\s+GmbH|Schweiz))\s+(.*)$/i);
+      if (suf){ kunde = suf[1].trim(); posbez=(suf[2]||'').trim(); }
+      else{ const p = before.split(/\s+/); kunde=p.shift()||''; posbez=p.join(' '); }
+    }
+
+    const offArb = extractOffeneArbeiten(after);
+    const BA = extractBA(after,c);
+
+    rows.push({
+      Beleg: beleg,
+      BA,
+      Kunde: kunde,
+      Artikel: artikel,
+      Position: posbez,
+      Liefertermin: lieferTerminTxt,
+      Offene: offArb,
+      Lagerplatz: lagerplatz,
+      Comment: '',
+      Done: false,
+
+      Sent: false, SentAt: null,
+      Arrived: false, ArrivedAt: null,
+      PMSource: false
+    });
+  }
+  return rows;
+}
+
+/* =========================
+   IMPORT: KONTROLLLISTE
+========================= */
+document.getElementById('pickpdf').addEventListener('change', async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  if(!checkPDF()){ alert('PDF.js fehlt. Bitte lib/pdf.js & pdf.worker.js bereitstellen.'); return; }
+
+  try{
+    const bytes = await f.arrayBuffer();
+    const pdf   = await pdfjsLib.getDocument({data:bytes}).promise;
+    let raw = '';
+    for (let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const tc   = await page.getTextContent();
+      raw += tc.items.map(i=>i.str).join(' ') + '\n';
+    }
+
+    const newRows = parseRawKontrollliste(raw);
+    if (!newRows.length){
+      alert('Keine Zeilen erkannt. Ist das die „Kontrollliste Produktion“?');
+      return;
+    }
+
+    ROWS = mergeRows(ROWS, newRows, {full:true});
+    sanitizeRows();
+    saveDB(ROWS);
+    render();
+  }catch(err){
+    console.error(err);
+    alert('Kontrollliste konnte nicht gelesen werden: ' + err);
+  }finally{
+    e.target.value='';
+  }
+});
+
+/* ==========================================================
+   PURCHMASTER IMPORT – PurchaseMasterDetail / Bestellauskunft
+   Match über "Kunde Auftrag" (6-stellig) == BA in Lieferliste
+   Status: 1 oder 3 (direkt nach Datum dd.mm.yyyy)
+========================================================== */
+
+
+  function tcToLines(tc){
+    // gruppiert TextItems nach Zeile (y), sortiert nach x
+    const items = (tc && tc.items) ? tc.items : [];
+    const groups = new Map();
+    for(const it of items){
+      const t = it.transform || [];
+      const x = t[4] ?? 0;
+      const y = t[5] ?? 0;
+      const key = Math.round(y*2)/2; // 0.5er Raster
+      if(!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({x, s: String(it.str||'').trim()});
+    }
+    const ys = Array.from(groups.keys()).sort((a,b)=>b-a);
+    const lines = [];
+    for(const y of ys){
+      const arr = groups.get(y).sort((a,b)=>a.x-b.x).map(o=>o.s).filter(Boolean);
+      if(arr.length) lines.push(arr.join(' '));
+    }
+    return lines;
+  }
+
+function pmBuildLines(tc){
+  const buckets = new Map();
+  for (const it of (tc.items || [])){
+    const s = (it.str || '').trim();
+    if (!s) continue;
+    const tr = it.transform || [0,0,0,0,0,0];
+    const x = tr[4] || 0;
+    const y = tr[5] || 0;
+    const yKey = Math.round(y / 3) * 3;
+    if (!buckets.has(yKey)) buckets.set(yKey, []);
+    buckets.get(yKey).push({ x, s });
+  }
+  const ys = Array.from(buckets.keys()).sort((a,b)=>b-a);
+  return ys.map(yKey => buckets.get(yKey).sort((a,b)=>a.x-b.x));
+}
+
+function pmNorm(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
+function pmExtractDate(lineText){
+  const m = String(lineText||'').match(/\b\d{2}\.\d{2}\.\d{4}\b/);
+  return m ? m[0] : null;
+}
+function pmExtractStatusAfterDate(lineText){
+  const m = String(lineText||'').match(/\b\d{2}\.\d{2}\.\d{4}\s+([13])\b/);
+  return m ? parseInt(m[1],10) : null;
+}
+function pmExtractAuftragFromText(lineText, knownBASet){
+  const nums = String(lineText||'').match(/\b\d{6}\b/g) || [];
+  for (let i = nums.length - 1; i >= 0; i--){
+    const n = nums[i];
+    if (knownBASet.has(n)) return n;
+  }
+  return null;
+}
+function pmParse(lines, knownBASet){
+  const map = {};
+  const lineTexts = lines.map(parts => parts.map(p=>pmNorm(p.s)).join(' '));
+
+  let pending = null;
+  let ttl = 0;
+
+  for (let i=0;i<lineTexts.length;i++){
+    const txt = lineTexts[i];
+
+    const status = pmExtractStatusAfterDate(txt);
+    const term   = pmExtractDate(txt);
+    const auftrag = pmExtractAuftragFromText(txt, knownBASet);
+
+    if (status === 1 || status === 3){
+      pending = { status, term: term || null };
+      ttl = 2;
+
+      if (auftrag && map[auftrag] == null){
+        map[auftrag] = pending;
+        pending = null;
+        ttl = 0;
+      }
+      continue;
+    }
+
+    if (pending && ttl > 0){
+      if (auftrag && map[auftrag] == null){
+        map[auftrag] = pending;
+        pending = null;
+        ttl = 0;
+      } else {
+        ttl--;
+        if (ttl <= 0) pending = null;
+      }
+    }
+  }
+
+  return map;
+}
+
+document.getElementById('pickpdf2').addEventListener('change', async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  if(!checkPDF()){ alert('PDF.js fehlt. Bitte lib/pdf.js & pdf.worker.js bereitstellen.'); return; }
+
+  try{
+    const bytes = await f.arrayBuffer();
+    const pdf   = await pdfjsLib.getDocument({data:bytes}).promise;
+
+    let lines = [];
+    let totalItems = 0;
+
+    for (let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const tc   = await page.getTextContent();
+      totalItems += (tc.items || []).length;
+      lines.push(...pmBuildLines(tc));
+    }
+
+    if (totalItems < 30){
+      alert(
+        'Purchmaster: Es wurde fast kein Text erkannt.\n' +
+        'Sehr wahrscheinlich ist das PDF ein Scan/Bild-PDF.\n\n' +
+        'Bitte ein textbasiertes PDF exportieren (nicht scannen).'
+      );
+      return;
+    }
+
+    const knownBASet = new Set(
+      ROWS.map(r => String(r.BA||'').trim()).filter(x => /^\d{6}$/.test(x))
+    );
+
+    const pmMap = pmParse(lines, knownBASet);
+    const keys = Object.keys(pmMap);
+
+    if (!keys.length){
+      alert(
+        'Purchmaster: Text erkannt, aber keine passende Zuordnung Kunde Auftrag (6-stellig) + Status (1/3) gefunden.\n\n' +
+        'Hinweis: Es werden nur Aufträge übernommen, die als BA in der Kontrollliste existieren.'
+      );
+      return;
+    }
+
+    ROWS = ROWS.map(r=>{
+      if (!isRelevantOffene(r.Offene)) return r;
+      return {...r, Sent:false, SentAt:null, Arrived:false, ArrivedAt:null, PMSource:false};
+    });
+
+    let hitsAll = 0;
+    let hitsRelevant = 0;
+
+    ROWS = ROWS.map(r=>{
+      const ba = String(r.BA||'').trim();
+      if (!ba) return r;
+
+      const info = pmMap[ba];
+      if (!info) return r;
+
+      hitsAll++;
+
+      if (!isRelevantOffene(r.Offene)) return r;
+
+      hitsRelevant++;
+
+      const term = info.term || null;
+
+      if (info.status === 1){
+        return { ...r, Sent:true, SentAt:term, PMSource:true };
+      }
+
+      if (info.status === 3){
+        return { ...r, Sent:true, SentAt:r.SentAt || term, Arrived:true, ArrivedAt:term, PMSource:true };
+      }
+
+      return r;
+    });
+
+    sanitizeRows();
+    saveDB(ROWS);
+    render();
+
+    alert(
+      `Purchmaster importiert.\n` +
+      `Aufträge im PM gefunden: ${hitsAll}\n` +
+      `Relevant gesetzt: ${hitsRelevant}\n\n` +
+      `Status 1 => Geschickt\nStatus 3 => Eingetroffen`
+    );
+
+  }catch(err){
+    console.error(err);
+    alert('Purchmaster konnte nicht gelesen werden: ' + err);
+  }finally{
+    e.target.value='';
+  }
+});
+
+/* =========================
+   FILTERS
+========================= */
+search.addEventListener('input', render);
+statusFilter.addEventListener('change', render);
+shipFilter.addEventListener('change', render);
+
+/* =========================
+   DONE + COMMENT + CHIP-CLICK
+========================= */
+tbody.addEventListener('change', e=>{
+  if (!e.target.classList.contains('chk-done')) return;
+  const tr  = e.target.closest('tr');
+  const uid = tr?.dataset?.uid;
+  const ix  = ROWS.findIndex(r=>uidOf(r)===uid);
+  if (ix<0) return;
+  ROWS[ix].Done = e.target.checked;
+  saveDB(ROWS);
+  render();
+});
+
+tbody.addEventListener('blur', e=>{
+  if (!e.target.classList.contains('comment')) return;
+  const tr  = e.target.closest('tr');
+  const uid = tr?.dataset?.uid;
+  const ix  = ROWS.findIndex(r=>uidOf(r)===uid);
+  if (ix<0) return;
+  ROWS[ix].Comment = (e.target.textContent || '').trim();
+  saveDB(ROWS);
+  render();
+}, true);
+
+// Chips (sent/arr) toggeln
+tbody.addEventListener('click', e=>{
+  const pill = e.target.closest('.pill');
+  if (!pill) return;
+
+  const tr  = pill.closest('tr');
+  const uid = tr?.dataset?.uid;
+  const ix  = ROWS.findIndex(r=>uidOf(r)===uid);
+  if (ix<0) return;
+
+  if (!isRelevantOffene(ROWS[ix].Offene)) return;
+  if (ROWS[ix].PMSource === true) return;
+
+  const kind = pill.dataset.pill;
+
+  if (kind === 'sent'){
+    const nowOn = !(ROWS[ix].Sent === true);
+    ROWS[ix].Sent = nowOn;
+    if (!nowOn) ROWS[ix].SentAt = null;
+  } else if (kind === 'arr'){
+    const nowOn = !(ROWS[ix].Arrived === true);
+    ROWS[ix].Arrived = nowOn;
+    if (nowOn) ROWS[ix].Sent = true;
+    if (!nowOn) ROWS[ix].ArrivedAt = null;
+  }
+
+  saveDB(ROWS);
+  render();
+});
+
+/* =========================
+   STEP öffnen (neu)
+   - nutzt window.bundkStep.openStepFor(posText)
+========================= */
+tbody.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('.btn-step');
+  if (!btn) return;
+
+  const tr  = btn.closest('tr');
+  const uid = tr?.dataset?.uid;
+  const row = ROWS.find(r => uidOf(r) === uid);
+  if (!row) return;
+
+  const posText = row.Position || '';
+
+  // UI Feedback
+  const old = btn.textContent;
+  btn.textContent = 'suche...';
+  btn.disabled = true;
+
+  try{
+    if (!window.bundkStep || !window.bundkStep.openStepFor){
+      alert('STEP-Funktion fehlt. Bitte preload.js prüfen.');
+      return;
+    }
+    await window.bundkStep.openStepFor(posText);
+  }catch(err){
+    alert('Fehler beim STEP öffnen: ' + err);
+  }finally{
+    btn.textContent = old || 'STEP';
+    btn.disabled = false;
+  }
+});
+
+/* =========================
+   RESET PM BUTTON
+========================= */
+document.getElementById('btnResetPM').addEventListener('click', ()=>{
+  if (!confirm('PM Felder wirklich für ALLE relevanten Zeilen zurücksetzen?')) return;
+  ROWS = ROWS.map(r=>{
+    if (!isRelevantOffene(r.Offene)) return r;
+    return {...r, Sent:false, SentAt:null, Arrived:false, ArrivedAt:null, PMSource:false};
+  });
+  sanitizeRows();
+  saveDB(ROWS);
+  render();
+});
+
+/* =========================
+   BACKUP / CLEAR
+========================= */
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  if (confirm('Wirklich alle gespeicherten Einträge löschen?')){
+    ROWS = [];
+    saveDB(ROWS);
+    render();
+  }
+});
+document.getElementById('btnBackupSave').addEventListener('click', ()=>{
+  const data = {rows:ROWS,meta:JSON.parse(localStorage.getItem(META_KEY)||'{}')};
+  const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `lieferplaner_bundk_backup_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+  a.click();
+});
+document.getElementById('backupFile').addEventListener('change', async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const txt = await f.text();
+    const obj = JSON.parse(txt);
+    if (!obj || !Array.isArray(obj.rows)) throw new Error('Ungültiges Backup');
+
+    ROWS = obj.rows.map(r=>({
+      ...r,
+      Done: r.Done === true,
+      Sent: r.Sent === true,
+      Arrived: r.Arrived === true,
+      SentAt: r.SentAt || null,
+      ArrivedAt: r.ArrivedAt || null,
+      PMSource: r.PMSource === true
+    }));
+
+    sanitizeRows();
+    saveDB(ROWS);
+    render();
+  }catch(err){
+    alert('Backup konnte nicht geladen werden: ' + err);
+  }finally{
+    e.target.value='';
+  }
+});
+
+/* =========================
+   INIT
+========================= */
+sanitizeRows();
+render();
+</script>
+</body>
+</html>
